@@ -113,7 +113,7 @@ func backupMailbox(imapClient *client.Client) {
 		fmt.Println("exiting")
 		os.Exit(1)
 	}
-	fmt.Printf("Flags for %s: %v\n", mailbox, mbox.Flags)
+	//fmt.Printf("Flags for %s: %v\n", mailbox, mbox.Flags)
 
 	messages := make(chan *imap.Message, 10)
 	seqset := new(imap.SeqSet)
@@ -124,7 +124,11 @@ func backupMailbox(imapClient *client.Client) {
 	}()
 
 	for msg := range messages {
-		fmt.Println("* " + msg.Envelope.Subject)
+		fmt.Printf("From %s %s\n", msg.Envelope.From[0].PersonalName, msg.Envelope.Date.String())
+		fmt.Printf("From: %s <%s>\n", msg.Envelope.From[0].PersonalName, msg.Envelope.From[0].Address())
+		fmt.Printf("Date: %s\n", msg.Envelope.Date.String())
+		fmt.Printf("Subject: %s\n", msg.Envelope.Subject)
+		fmt.Println("\n")
 	}
 
 }
