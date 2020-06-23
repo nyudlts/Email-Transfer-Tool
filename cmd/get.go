@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
+	"github.com/emersion/go-message/mail"
 	"github.com/mcnijman/go-emailaddress"
 	"github.com/spf13/cobra"
 	"os"
@@ -35,8 +36,8 @@ var getCmd = &cobra.Command{
 		}
 		fmt.Printf("  * Client connected to %s\n", domain)
 		defer imapClient.Close()
-		password := getPassword()
-		if err := imapClient.Login(email, password); err != nil {
+
+		if err := imapClient.Login(email, getPassword()); err != nil {
 			fmt.Println(err)
 			fmt.Println("exiting")
 			os.Exit(1)
@@ -113,22 +114,32 @@ func backupMailbox(imapClient *client.Client) {
 		fmt.Println("exiting")
 		os.Exit(1)
 	}
-	//fmt.Printf("Flags for %s: %v\n", mailbox, mbox.Flags)
 
-	messages := make(chan *imap.Message, 10)
-	seqset := new(imap.SeqSet)
-	seqset.AddRange(uint32(1), mbox.Messages)
-	done := make(chan error, 1)
+	seqSet := new(imap.SeqSet)
+	seqSet.AddRange(uint32(1), mbox.Messages)
+
+	messages := make(chan *imap.Message, mbox.Messages)
+	var section imap.BodySectionName
+	items := []imap.FetchItem{section.FetchItem()}
+
 	go func() {
-		done <- imapClient.Fetch(seqset, []imap.FetchItem{imap.FetchEnvelope}, messages)
+		if err := imapClient.Fetch(seqSet, items, messages); err != nil {
+			panic(err)
+		}
 	}()
 
 	for msg := range messages {
-		fmt.Printf("From %s %s\n", msg.Envelope.From[0].PersonalName, msg.Envelope.Date.String())
-		fmt.Printf("From: %s <%s>\n", msg.Envelope.From[0].PersonalName, msg.Envelope.From[0].Address())
-		fmt.Printf("Date: %s\n", msg.Envelope.Date.String())
-		fmt.Printf("Subject: %s\n", msg.Envelope.Subject)
-		fmt.Println("\n")
+		msgBody := msg.GetBody(&section)
+		reader, err := mail.CreateReader(msgBody)
+		if err != nil {
+			panic(err)
+		}
+		header := reader.Header
+		fields := header.Fields()
+		fmt.Printf("\nFrom %v\n", header.Get("From"))
+		for fields.Next() {
+			fmt.Printf("%v: %v\n", fields.Key(), fields.Value())
+		}
 	}
 
 }
