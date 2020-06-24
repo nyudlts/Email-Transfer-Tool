@@ -1,10 +1,11 @@
 package cmd
 
 var (
-	all     bool
-	email   string
-	domains = make(map[string]string)
-	mailbox string
+	all      bool
+	email    string
+	domains  = make(map[string]string)
+	mailbox  string
+	location string
 )
 
 func init() {

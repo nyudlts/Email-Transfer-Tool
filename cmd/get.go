@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
+	"github.com/emersion/go-mbox"
 	"github.com/emersion/go-message/mail"
 	"github.com/mcnijman/go-emailaddress"
 	"github.com/spf13/cobra"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 func init() {
@@ -16,25 +20,40 @@ func init() {
 	getCmd.PersistentFlags().StringVarP(&email, "email", "e", "mail@example.com", "email address")
 	getCmd.PersistentFlags().BoolVarP(&all, "all", "a", false, "get all mailboxes")
 	getCmd.PersistentFlags().StringVarP(&mailbox, "mailbox", "m", "inbox", "mailbox to capture")
+	getCmd.PersistentFlags().StringVarP(&location, "location", "l", "/tmp", "location to write mbox file")
 }
+
+var emailAddress *emailaddress.EmailAddress
+var err error
 
 var getCmd = &cobra.Command{
 	Use:   "get",
 	Short: "get",
 	Run: func(cmd *cobra.Command, args []string) {
+
+		emailAddress, err = emailaddress.Parse(email)
+		if err != nil {
+			fmt.Println(err)
+			fmt.Println("exiting")
+			os.Exit(1)
+		}
+
 		domain, err := getDomain()
 		if err != nil {
 			fmt.Println(err)
 			fmt.Println("exiting")
 			os.Exit(1)
 		}
+
 		imapClient, err := getClient(domain)
 		if err != nil {
 			fmt.Println(err)
 			fmt.Println("exiting")
 			os.Exit(1)
 		}
+
 		fmt.Printf("  * Client connected to %s\n", domain)
+
 		defer imapClient.Close()
 
 		if err := imapClient.Login(email, getPassword()); err != nil {
@@ -45,7 +64,20 @@ var getCmd = &cobra.Command{
 
 		mailboxes := getMailboxes(imapClient)
 		if mailboxContains(mailboxes, mailbox) {
-			backupMailbox(imapClient)
+			mboxName := fmt.Sprintf("%s_AT_%s_%s.mbox", strings.ReplaceAll(emailAddress.LocalPart, ".", "_"), strings.ReplaceAll(emailAddress.Domain, ".", "_"), mailbox)
+			f, err := os.Create(filepath.Join(location, mboxName))
+			if err != nil {
+				fmt.Println(err)
+				fmt.Println("exiting")
+				os.Exit(1)
+			}
+
+			fileWriter := bufio.NewWriter(f)
+			mboxWriter := mbox.NewWriter(fileWriter)
+			defer mboxWriter.Close()
+
+			backupMailbox(imapClient, mboxWriter)
+
 		} else {
 			fmt.Printf("  ! account does not contain mailbox %s\n", mailbox)
 			fmt.Println("exiting")
@@ -56,16 +88,11 @@ var getCmd = &cobra.Command{
 }
 
 func getDomain() (string, error) {
-	domain := ""
-	emailAddreess, err := emailaddress.Parse(email)
-	if err != nil {
-		return domain, err
-	}
 
-	if domain, ok := domains[emailAddreess.Domain]; ok {
+	if domain, ok := domains[emailAddress.Domain]; ok {
 		return domain, nil
 	} else {
-		return domain, fmt.Errorf("%s is not a supported domain", emailAddreess.Domain)
+		return domain, fmt.Errorf("%s is not a supported domain", emailAddress.Domain)
 	}
 }
 
@@ -107,7 +134,7 @@ func mailboxContains(mbs []string, mb string) bool {
 	return false
 }
 
-func backupMailbox(imapClient *client.Client) {
+func backupMailbox(imapClient *client.Client, writer *mbox.Writer) {
 	mbox, err := imapClient.Select(mailbox, false)
 	if err != nil {
 		fmt.Println(err)
@@ -132,14 +159,19 @@ func backupMailbox(imapClient *client.Client) {
 		msgBody := msg.GetBody(&section)
 		reader, err := mail.CreateReader(msgBody)
 		if err != nil {
-			panic(err)
+			fmt.Println(err)
+			fmt.Println("exiting")
+			os.Exit(1)
 		}
 		header := reader.Header
 		fields := header.Fields()
-		fmt.Printf("\nFrom %v\n", header.Get("From"))
+		date, _ := header.Date()
+		mr, _ := writer.CreateMessage(header.Get("From"), date)
 		for fields.Next() {
-			fmt.Printf("%v: %v\n", fields.Key(), fields.Value())
+			headerLine := strings.NewReader(fmt.Sprintf("%v: %v\n", fields.Key(), fields.Value()))
+			io.Copy(mr, headerLine)
 		}
+
 	}
 
 }
