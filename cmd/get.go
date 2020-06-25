@@ -10,6 +10,7 @@ import (
 	"github.com/mcnijman/go-emailaddress"
 	"github.com/spf13/cobra"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,7 +107,7 @@ func getClient(domain string) (*client.Client, error) {
 }
 
 func getPassword() string {
-	fmt.Print("Enter your password: ")
+	fmt.Print("  * Enter your password: ")
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Scan()
 	return scanner.Text()
@@ -155,23 +156,40 @@ func backupMailbox(imapClient *client.Client, writer *mbox.Writer) {
 		}
 	}()
 
+	count := 1
 	for msg := range messages {
+		count = count + 1
+		fmt.Println("  * Writing email ", count, " of ", mbox.Messages)
 		msgBody := msg.GetBody(&section)
-		reader, err := mail.CreateReader(msgBody)
+		mr, err := mail.CreateReader(msgBody)
 		if err != nil {
 			fmt.Println(err)
 			fmt.Println("exiting")
 			os.Exit(1)
 		}
-		header := reader.Header
+		header := mr.Header
 		fields := header.Fields()
 		date, _ := header.Date()
-		mr, _ := writer.CreateMessage(header.Get("From"), date)
+		mw, _ := writer.CreateMessage(header.Get("From"), date)
+
 		for fields.Next() {
 			headerLine := strings.NewReader(fmt.Sprintf("%v: %v\n", fields.Key(), fields.Value()))
-			io.Copy(mr, headerLine)
+			io.Copy(mw, headerLine)
+		}
+
+		io.Copy(mw, strings.NewReader("\n"))
+
+		for {
+			p, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				log.Fatal(err)
+			}
+
+			io.Copy(mw, p.Body)
+
 		}
 
 	}
-
 }

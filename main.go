@@ -5,7 +5,9 @@ import (
 	"github.com/nyudlts/go-mail/cmd"
 )
 
+var vers = "0.0.0"
+
 func main() {
-	fmt.Println("go-mail")
+	fmt.Println("** email-transfer-tool v.", vers, " **")
 	cmd.Execute()
 }
